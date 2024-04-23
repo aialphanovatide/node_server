@@ -20,16 +20,36 @@ async def fetch_container_info(container):
     if container.status == 'running':
         try:
             stats = await asyncio.to_thread(container.stats, stream=False)
-            container_info['memory_stats'] = stats['memory_stats']
-            container_info['logs'] = await asyncio.to_thread(container.logs)
+            print('stats: ', stats)
+            memory_usage_gb = stats['memory_stats']['usage'] / (1024 ** 3)
+            memory_limit_gb = stats['memory_stats']['limit'] / (1024 ** 3)
+            container_info['memory_stats'] = {
+                'usage_gb': round(memory_usage_gb, 2),
+                'limit_gb': round(memory_limit_gb, 2)
+            }
+            
+            # Calculate disk space usage
+            if 'blkio_stats' in stats and 'io_service_bytes_recursive' in stats['blkio_stats']:
+                disk_usage_bytes = sum(entry['value'] for entry in stats['blkio_stats']['io_service_bytes_recursive'] if entry['op'] == 'Write')
+                disk_usage_gb = disk_usage_bytes / (1024 ** 3)
+                container_info['disk_usage_gb'] = round(disk_usage_gb, 2)
+            else:
+                container_info['disk_usage_gb'] = 'N/A'
+            
+            logs = await asyncio.to_thread(container.logs)
+            container_info['logs'] = logs.decode('utf-8')
         except Exception as e:
             container_info['memory_stats'] = 'N/A'
+            container_info['disk_usage_gb'] = 'N/A'
             container_info['logs'] = str(e)
     else:
         container_info['memory_stats'] = 'N/A'
+        container_info['disk_usage_gb'] = 'N/A'
         container_info['logs'] = 'N/A'
     
     return container_info
+
+
 
 # Get docker basic data
 @docker_bp.route('/docker_info', methods=['GET'])
